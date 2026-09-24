@@ -2,6 +2,7 @@ local Players = game:GetService("Players")
 local PathfindingService = game:GetService("PathfindingService")
 local CollectionService = game:GetService("CollectionService")
 local CoreGui = game:GetService("CoreGui")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local player = Players.LocalPlayer
 
@@ -23,43 +24,93 @@ local function character()
 end
 
 local function root()
-    return character():WaitForChild("HumanoidRootPart")
+    local char = character()
+    return char:WaitForChild("HumanoidRootPart", 5)
 end
 
 local function humanoid()
-    return character():WaitForChild("Humanoid")
+    local char = character()
+    return char:WaitForChild("Humanoid", 5)
 end
 
 --------------------------------------------------
--- PATHFINDING & LOGIC
+-- SAFE REMOTE FINDER
 --------------------------------------------------
+local function getRemote(name)
+    local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+    if remotes then
+        return remotes:FindFirstChild(name)
+    end
+    -- เผื่อบางเกมวาง Remote ไว้ที่ ReplicatedStorage ตรงๆ
+    return ReplicatedStorage:FindFirstChild(name)
+end
 
+--------------------------------------------------
+-- PATHFINDING
+--------------------------------------------------
 local function walkTo(target)
+    if not target then return false end
     local targetPart = target:IsA("BasePart") and target or target:FindFirstChildWhichIsA("BasePart", true)
     if not targetPart then return false end
 
-    local path = PathfindingService:CreatePath({ AgentRadius = 2, AgentHeight = 5, AgentCanJump = true })
-    path:ComputeAsync(root().Position, targetPart.Position)
+    local hrp = root()
+    local hum = humanoid()
+    if not hrp or not hum then return false end
 
-    if path.Status ~= Enum.PathStatus.Success then return false end
+    local path = PathfindingService:CreatePath({
+        AgentRadius = 2,
+        AgentHeight = 5,
+        AgentCanJump = true
+    })
+
+    local success, errorMessage = pcall(function()
+        path:ComputeAsync(hrp.Position, targetPart.Position)
+    end)
+
+    if not success or path.Status ~= Enum.PathStatus.Success then
+        -- ถ้า Pathfinding ติดขัด ให้ใช้วิธีเดินตรงแบบสำรองแทน
+        hum:MoveTo(targetPart.Position)
+        return true
+    end
 
     for _, waypoint in ipairs(path:GetWaypoints()) do
-        if waypoint.Action == Enum.PathWaypointAction.Jump then
-            humanoid().Jump = true
+        if not Settings.AutoCollect and not Settings.AutoNPC and not Settings.AutoDeliver and not Settings.AutoQuest then
+            break
         end
-        humanoid():MoveTo(waypoint.Position)
-        if not humanoid().MoveToFinished:Wait() then return false end
+        if waypoint.Action == Enum.PathWaypointAction.Jump then
+            hum.Jump = true
+        end
+        hum:MoveTo(waypoint.Position)
+        
+        local reached = false
+        local connection
+        connection = hum.MoveToFinished:Connect(function(isReached)
+            reached = true
+            if connection then connection:Disconnect() end
+        end)
+
+        -- รอให้เดินถึงหรือหมดเวลา
+        local tickCount = 0
+        while not reached and tickCount < 20 do
+            task.wait(0.1)
+            tickCount = tickCount + 1
+        end
+        if connection then connection:Disconnect() end
     end
     return true
 end
 
+--------------------------------------------------
+-- AUTOMATION LOGIC
+--------------------------------------------------
 local function nearestResource()
     local closest, closestDistance = nil, Settings.ResourceRadius
     for _, resource in ipairs(CollectionService:GetTagged("Resource")) do
         if resource:IsDescendantOf(workspace) then
             local part = resource:IsA("BasePart") and resource or resource:FindFirstChildWhichIsA("BasePart", true)
-            if part then
-                local distance = (root().Position - part.Position).Magnitude
+            local hrp = root()
+            if part and hrp then
+                local distance = (hrp.Position - part.Position).Magnitude
                 if distance < closestDistance then
                     closestDistance = distance
                     closest = resource
@@ -70,22 +121,15 @@ local function nearestResource()
     return closest
 end
 
-local function collect(resource)
-    if not resource then return end
-    if walkTo(resource) then
-        local remote = game.ReplicatedStorage.Remotes:FindFirstChild("CollectResource")
-        if remote then remote:FireServer(resource) end
-    end
-end
-
 local function nearestNPC()
     local folder = workspace:FindFirstChild("NPCs")
     if not folder then return nil end
     local closest, distance = nil, math.huge
     for _, npc in ipairs(folder:GetChildren()) do
         local part = npc:FindFirstChild("HumanoidRootPart") or npc:FindFirstChildWhichIsA("BasePart", true)
-        if part then
-            local d = (root().Position - part.Position).Magnitude
+        local hrp = root()
+        if part and hrp then
+            local d = (hrp.Position - part.Position).Magnitude
             if d < distance then
                 distance = d
                 closest = npc
@@ -95,70 +139,89 @@ local function nearestNPC()
     return closest
 end
 
-local function deliver()
-    local npc = nearestNPC()
-    if not npc then return end
-    if walkTo(npc) then
-        local remote = game.ReplicatedStorage.Remotes:FindFirstChild("DeliverItem")
-        if remote then remote:FireServer(npc) end
-    end
-end
-
-local function doQuest()
-    local quests = workspace:FindFirstChild("QuestPoints")
-    if not quests then return end
-    for _, point in ipairs(quests:GetChildren()) do
-        if walkTo(point) then
-            local remote = game.ReplicatedStorage.Remotes:FindFirstChild("QuestAction")
-            if remote then remote:FireServer(point) end
-            break
-        end
-    end
-end
-
-local function godMode()
-    if not Settings.GodMode then return end
-    local hum = humanoid()
-    hum.MaxHealth = math.huge
-    hum.Health = math.huge
-end
-
-local function aura()
-    if not Settings.Aura then return end
-    local myCharacter = character()
-    for _, model in ipairs(workspace:GetChildren()) do
-        if model ~= myCharacter then
-            local hum = model:FindFirstChildOfClass("Humanoid")
-            local targetRoot = model:FindFirstChild("HumanoidRootPart")
-            if hum and targetRoot and hum.Health > 0 then
-                local distance = (root().Position - targetRoot.Position).Magnitude
-                if distance <= Settings.AuraRadius then
-                    local remote = game.ReplicatedStorage.Remotes:FindFirstChild("AuraAttack")
-                    if remote then remote:FireServer(model, Settings.AuraDamage) end
+--------------------------------------------------
+-- MAIN LOOP
+--------------------------------------------------
+task.spawn(function()
+    while task.wait(0.5) do
+        pcall(function()
+            -- God Mode
+            if Settings.GodMode then
+                local hum = humanoid()
+                if hum then
+                    hum.MaxHealth = math.huge
+                    hum.Health = math.huge
                 end
             end
-        end
-    end
-end
 
-task.spawn(function()
-    while task.wait(0.25) do
-        godMode()
-        aura()
-        if Settings.AutoCollect then collect(nearestResource()) end
-        if Settings.AutoNPC then
-            local npc = nearestNPC()
-            if npc then walkTo(npc) end
-        end
-        if Settings.AutoDeliver then deliver() end
-        if Settings.AutoQuest then doQuest() end
+            -- Aura Attack
+            if Settings.Aura then
+                local myChar = character()
+                local hrp = root()
+                if myChar and hrp then
+                    for _, model in ipairs(workspace:GetChildren()) do
+                        if model ~= myChar and model:IsA("Model") then
+                            local hum = model:FindFirstChildOfClass("Humanoid")
+                            local targetRoot = model:FindFirstChild("HumanoidRootPart")
+                            if hum and targetRoot and hum.Health > 0 then
+                                if (hrp.Position - targetRoot.Position).Magnitude <= Settings.AuraRadius then
+                                    local remote = getRemote("AuraAttack")
+                                    if remote then
+                                        remote:FireServer(model, Settings.AuraDamage)
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+
+            -- Auto Collect
+            if Settings.AutoCollect then
+                local res = nearestResource()
+                if res then
+                    walkTo(res)
+                    local remote = getRemote("CollectResource")
+                    if remote then remote:FireServer(res) end
+                end
+            end
+
+            -- Auto NPC
+            if Settings.AutoNPC then
+                local npc = nearestNPC()
+                if npc then walkTo(npc) end
+            end
+
+            -- Auto Deliver
+            if Settings.AutoDeliver then
+                local npc = nearestNPC()
+                if npc then
+                    walkTo(npc)
+                    local remote = getRemote("DeliverItem")
+                    if remote then remote:FireServer(npc) end
+                end
+            end
+
+            -- Auto Quest
+            if Settings.AutoQuest then
+                local quests = workspace:FindFirstChild("QuestPoints")
+                if quests then
+                    for _, point in ipairs(quests:GetChildren()) do
+                        if walkTo(point) then
+                            local remote = getRemote("QuestAction")
+                            if remote then remote:FireServer(point) end
+                            break
+                        end
+                    end
+                end
+            end
+        end)
     end
 end)
 
 --------------------------------------------------
--- SIMPLE BUILT-IN UI (TOGGLE MENU)
+-- UI MENU
 --------------------------------------------------
-
 if CoreGui:FindFirstChild("MrBeastUI") then
     CoreGui:FindFirstChild("MrBeastUI"):Destroy()
 end
@@ -183,9 +246,9 @@ UICorner.Parent = MainFrame
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 40)
 Title.BackgroundTransparency = 1
-Title.Text = "MrBeast Auto Farm"
+Title.Text = "MrBeast Auto Farm (Fixed)"
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-Title.TextSize = 16
+Title.TextSize = 15
 Title.Font = Enum.Font.SourceSansBold
 Title.Parent = MainFrame
 
