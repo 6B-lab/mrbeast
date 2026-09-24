@@ -112,13 +112,11 @@ end
 --------------------------------------------------
 
 local function collect(resource)
-
     if not resource then
         return
     end
 
     if walkTo(resource) then
-
         local remote =
             game.ReplicatedStorage.Remotes
                 :FindFirstChild("CollectResource")
@@ -134,7 +132,6 @@ end
 --------------------------------------------------
 
 local function nearestNPC()
-
     local folder = workspace:FindFirstChild("NPCs")
 
     if not folder then
@@ -145,7 +142,6 @@ local function nearestNPC()
     local distance = math.huge
 
     for _, npc in ipairs(folder:GetChildren()) do
-
         local part =
             npc:FindFirstChild("HumanoidRootPart")
             or npc:FindFirstChildWhichIsA(
@@ -154,7 +150,6 @@ local function nearestNPC()
             )
 
         if part then
-
             local d =
                 (root().Position - part.Position).Magnitude
 
@@ -173,7 +168,6 @@ end
 --------------------------------------------------
 
 local function deliver()
-
     local npc = nearestNPC()
 
     if not npc then
@@ -181,7 +175,6 @@ local function deliver()
     end
 
     if walkTo(npc) then
-
         local remote =
             game.ReplicatedStorage.Remotes
                 :FindFirstChild("DeliverItem")
@@ -197,7 +190,6 @@ end
 --------------------------------------------------
 
 local function doQuest()
-
     local quests =
         workspace:FindFirstChild("QuestPoints")
 
@@ -206,9 +198,7 @@ local function doQuest()
     end
 
     for _, point in ipairs(quests:GetChildren()) do
-
         if walkTo(point) then
-
             local remote =
                 game.ReplicatedStorage.Remotes
                     :FindFirstChild("QuestAction")
@@ -227,13 +217,11 @@ end
 --------------------------------------------------
 
 local function godMode()
-
     if not Settings.GodMode then
         return
     end
 
     local hum = humanoid()
-
     hum.MaxHealth = math.huge
     hum.Health = math.huge
 end
@@ -243,7 +231,6 @@ end
 --------------------------------------------------
 
 local function aura()
-
     if not Settings.Aura then
         return
     end
@@ -251,9 +238,7 @@ local function aura()
     local myCharacter = character()
 
     for _, model in ipairs(workspace:GetChildren()) do
-
         if model ~= myCharacter then
-
             local hum =
                 model:FindFirstChildOfClass("Humanoid")
 
@@ -261,16 +246,11 @@ local function aura()
                 model:FindFirstChild("HumanoidRootPart")
 
             if hum and targetRoot and hum.Health > 0 then
-
                 local distance =
                     (root().Position -
                     targetRoot.Position).Magnitude
 
                 if distance <= Settings.AuraRadius then
-
-                    -- เกมของเราเองควรให้ Server
-                    -- ตรวจสอบและทำ Damage
-
                     local remote =
                         game.ReplicatedStorage.Remotes
                             :FindFirstChild("AuraAttack")
@@ -292,9 +272,7 @@ end
 --------------------------------------------------
 
 task.spawn(function()
-
     while task.wait(0.25) do
-
         godMode()
         aura()
 
@@ -304,7 +282,6 @@ task.spawn(function()
 
         if Settings.AutoNPC then
             local npc = nearestNPC()
-
             if npc then
                 walkTo(npc)
             end
@@ -318,5 +295,85 @@ task.spawn(function()
             doQuest()
         end
     end
-
 end)
+
+--------------------------------------------------
+-- RAYFIELD UI INTERFACE
+--------------------------------------------------
+
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+local Window = Rayfield:CreateWindow({
+    Name = "MrBeast Auto Farm",
+    LoadingTitle = "Loading Script...",
+    LoadingSubtitle = "by GitHub",
+    ConfigurationSaving = {
+        Enabled = false,
+        FolderName = nil,
+        FileName = "MrBeastConfig"
+    },
+    KeySystem = false,
+})
+
+local Tab = Window:CreateTab("Main", "rewind")
+
+Tab:CreateToggle({
+    Name = "Auto Collect",
+    CurrentValue = false,
+    Flag = "AutoCollectToggle",
+    Callback = function(Value)
+        Settings.AutoCollect = Value
+    end,
+})
+
+Tab:CreateToggle({
+    Name = "Auto NPC",
+    CurrentValue = false,
+    Flag = "AutoNPCToggle",
+    Callback = function(Value)
+        Settings.AutoNPC = Value
+    end,
+})
+
+Tab:CreateToggle({
+    Name = "Auto Deliver",
+    CurrentValue = false,
+    Flag = "AutoDeliverToggle",
+    Callback = function(Value)
+        Settings.AutoDeliver = Value
+    end,
+})
+
+Tab:CreateToggle({
+    Name = "Auto Quest",
+    CurrentValue = false,
+    Flag = "AutoQuestToggle",
+    Callback = function(Value)
+        Settings.AutoQuest = Value
+    end,
+})
+
+Tab:CreateToggle({
+    Name = "God Mode",
+    CurrentValue = false,
+    Flag = "GodModeToggle",
+    Callback = function(Value)
+        Settings.GodMode = Value
+    end,
+})
+
+Tab:CreateToggle({
+    Name = "Aura Attack",
+    CurrentValue = false,
+    Flag = "AuraToggle",
+    Callback = function(Value)
+        Settings.Aura = Value
+    end,
+})
+
+Rayfield:Notify({
+    Title = "Success!",
+    Content = "Script loaded with UI successfully.",
+    Duration = 6.5,
+    Image = "check",
+})
