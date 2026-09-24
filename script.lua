@@ -34,12 +34,11 @@ local function humanoid()
 end
 
 --------------------------------------------------
--- SAFE REMOTE FINDER (ค้นหารีโมตแบบครอบคลุม)
+-- SAFE REMOTE FINDER
 --------------------------------------------------
 local function getRemote(...)
     local names = {...}
     for _, name in ipairs(names) do
-        -- ค้นหาใน ReplicatedStorage ทั่วไปและโฟลเดอร์ Remotes
         local remotes = ReplicatedStorage:FindFirstChild("Remotes")
         if remotes and remotes:FindFirstChild(name) then
             return remotes:FindFirstChild(name)
@@ -52,7 +51,7 @@ local function getRemote(...)
 end
 
 --------------------------------------------------
--- PATHFINDING & MOVEMENT (ระบบเดินอัจฉริยะ)
+-- PATHFINDING & MOVEMENT
 --------------------------------------------------
 local function walkTo(target)
     if not target then return false end
@@ -73,7 +72,6 @@ local function walkTo(target)
         path:ComputeAsync(hrp.Position, targetPart.Position)
     end)
 
-    -- ถ้าคำนวณทางเดินไม่ผ่าน ให้ใช้วิธีเดินตรงเข้าไปหาทันที
     if not success or path.Status ~= Enum.PathStatus.Success then
         hum:MoveTo(targetPart.Position)
         return true
@@ -103,11 +101,10 @@ local function walkTo(target)
 end
 
 --------------------------------------------------
--- FINDERS (ระบบสแกนหาเป้าหมายในเกม)
+-- FINDERS
 --------------------------------------------------
 local function nearestResource()
     local closest, closestDistance = nil, math.huge
-    -- ค้นหาจาก CollectionService หรือสแกนหาใน Workspace
     for _, resource in ipairs(CollectionService:GetTagged("Resource")) do
         if resource:IsDescendantOf(workspace) then
             local part = resource:IsA("BasePart") and resource or resource:FindFirstChildWhichIsA("BasePart", true)
@@ -143,7 +140,7 @@ local function nearestNPC()
 end
 
 --------------------------------------------------
--- MAIN AUTOMATION LOOP (ลูปการทำงานหลัก)
+-- MAIN AUTOMATION LOOP
 --------------------------------------------------
 task.spawn(function()
     while task.wait(0.2) do
@@ -157,7 +154,7 @@ task.spawn(function()
                 end
             end
 
-            -- 2. No Hunger (ล็อกค่าพลังงาน/ความหิวให้เต็ม)
+            -- 2. No Hunger
             if Settings.NoHunger then
                 local leaderstats = player:FindFirstChild("leaderstats")
                 if leaderstats then
@@ -170,14 +167,15 @@ task.spawn(function()
                 end
             end
 
-            -- 3. Kill All Aura (โจมตีทุกอย่างในแมพนอกจากผู้เล่น)
+            -- 3. Kill All Aura
             if Settings.KillAllAura then
                 local myChar = character()
+                local hrp = root()
                 for _, model in ipairs(workspace:GetDescendants()) do
                     if model:IsA("Model") and model ~= myChar then
                         local hum = model:FindFirstChildOfClass("Humanoid")
                         local targetRoot = model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("Head")
-                        -- เช็คว่าเป็นตัวละครอื่นที่ไม่ใช่ผู้เล่น และยังมีชีวิตอยู่
+                        
                         if hum and targetRoot and hum.Health > 0 then
                             local isPlayer = false
                             for _, p in ipairs(Players:GetPlayers()) do
@@ -188,13 +186,13 @@ task.spawn(function()
                             end
                             
                             if not isPlayer then
-                                -- ส่งดาเมจหรือเรียกใช้รีโมตโจมตี
-                                local remote = getRemote("AuraAttack", "AttackRemote", "Hit", "Damage", "CombatRemote")
-                                if remote then
-                                    remote:FireServer(model, Settings.AuraDamage)
-                                else
-                                    -- วิธีสำรอง: ปรับเลือดมอนสเตอร์ให้เป็น 0 โดยตรง (ถ้าเกมรองรับ)
-                                    hum.Health = 0
+                                if hrp and (hrp.Position - targetRoot.Position).Magnitude < 300 then
+                                    local remote = getRemote("AuraAttack", "AttackRemote", "Hit", "Damage", "CombatRemote", "WeaponDamage")
+                                    if remote then
+                                        remote:FireServer(model, Settings.AuraDamage)
+                                    else
+                                        hum.Health = 0
+                                    end
                                 end
                             end
                         end
@@ -202,7 +200,7 @@ task.spawn(function()
                 end
             end
 
-            -- 4. Auto Collect (เก็บของอัตโนมัติ)
+            -- 4. Auto Collect
             if Settings.AutoCollect then
                 local res = nearestResource()
                 if res then
@@ -244,7 +242,7 @@ task.spawn(function()
 end)
 
 --------------------------------------------------
--- UI SETUP (ดีไซน์ใหม่ ย่อเหลือกรอบเล็กๆ ได้)
+-- UI SETUP (ย่อหน้าต่างให้เหลือจิ๋วสุดๆ)
 --------------------------------------------------
 if playerGui:FindFirstChild("MrBeastModernUI") then
     playerGui:FindFirstChild("MrBeastModernUI"):Destroy()
@@ -336,12 +334,17 @@ local MinCorner = Instance.new("UICorner")
 MinCorner.CornerRadius = UDim.new(0, 6)
 MinCorner.Parent = MinBtn
 
--- ปรับปุ่มย่อหน้าจอให้เหลือแค่กรอบเล็กๆ (ซ่อนเนื้อหาข้างในทั้งหมด)
+-- ระบบย่อหน้าต่างให้เหลือขนาดจิ๋ว (ซ่อนทุกอย่างยกเว้นปุ่มเปิดคืน)
 local minimized = false
 MinBtn.MouseButton1Click:Connect(function()
     minimized = not minimized
     Container.Visible = not minimized
-    MainFrame.Size = minimized and UDim2.new(0, 280, 0, 45) or UDim2.new(0, 280, 0, 370)
+    Title.Visible = not minimized
+    CloseBtn.Visible = not minimized
+    TopBar.Size = minimized and UDim2.new(1, 0, 1, 0) or UDim2.new(1, 0, 0, 45)
+    MainFrame.Size = minimized and UDim2.new(0, 45, 0, 25) or UDim2.new(0, 280, 0, 370)
+    MinBtn.Position = minimized and UDim2.new(0, 7.5, 0, 2.5) or UDim2.new(1, -74, 0, 7.5)
+    MinBtn.Size = minimized and UDim2.new(0, 30, 0, 20) or UDim2.new(0, 30, 0, 30)
     MinBtn.Text = minimized and "+" or "-"
 end)
 
