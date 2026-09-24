@@ -1,10 +1,10 @@
 local Players = game:GetService("Players")
 local PathfindingService = game:GetService("PathfindingService")
 local CollectionService = game:GetService("CollectionService")
-local CoreGui = game:GetService("CoreGui")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
 
 local Settings = {
     AutoCollect = false,
@@ -13,11 +13,10 @@ local Settings = {
     AutoQuest = false,
     GodMode = false,
     NoHunger = false,
-    Aura = false,
+    KillAllAura = false,
 
-    ResourceRadius = 120,
-    AuraRadius = 15,
-    AuraDamage = 25
+    ResourceRadius = 500,
+    AuraDamage = 100
 }
 
 local function character()
@@ -35,11 +34,12 @@ local function humanoid()
 end
 
 --------------------------------------------------
--- SAFE REMOTE FINDER
+-- SAFE REMOTE FINDER (ค้นหารีโมตแบบครอบคลุม)
 --------------------------------------------------
 local function getRemote(...)
     local names = {...}
     for _, name in ipairs(names) do
+        -- ค้นหาใน ReplicatedStorage ทั่วไปและโฟลเดอร์ Remotes
         local remotes = ReplicatedStorage:FindFirstChild("Remotes")
         if remotes and remotes:FindFirstChild(name) then
             return remotes:FindFirstChild(name)
@@ -52,7 +52,7 @@ local function getRemote(...)
 end
 
 --------------------------------------------------
--- PATHFINDING & MOVEMENT
+-- PATHFINDING & MOVEMENT (ระบบเดินอัจฉริยะ)
 --------------------------------------------------
 local function walkTo(target)
     if not target then return false end
@@ -73,6 +73,7 @@ local function walkTo(target)
         path:ComputeAsync(hrp.Position, targetPart.Position)
     end)
 
+    -- ถ้าคำนวณทางเดินไม่ผ่าน ให้ใช้วิธีเดินตรงเข้าไปหาทันที
     if not success or path.Status ~= Enum.PathStatus.Success then
         hum:MoveTo(targetPart.Position)
         return true
@@ -92,7 +93,7 @@ local function walkTo(target)
         end)
 
         local t = 0
-        while not reached and t < 15 do
+        while not reached and t < 10 do
             task.wait(0.1)
             t = t + 1
         end
@@ -102,10 +103,11 @@ local function walkTo(target)
 end
 
 --------------------------------------------------
--- SCANTERS
+-- FINDERS (ระบบสแกนหาเป้าหมายในเกม)
 --------------------------------------------------
 local function nearestResource()
-    local closest, closestDistance = nil, Settings.ResourceRadius
+    local closest, closestDistance = nil, math.huge
+    -- ค้นหาจาก CollectionService หรือสแกนหาใน Workspace
     for _, resource in ipairs(CollectionService:GetTagged("Resource")) do
         if resource:IsDescendantOf(workspace) then
             local part = resource:IsA("BasePart") and resource or resource:FindFirstChildWhichIsA("BasePart", true)
@@ -123,7 +125,7 @@ local function nearestResource()
 end
 
 local function nearestNPC()
-    local folder = workspace:FindFirstChild("NPCs") or workspace:FindFirstChild("Npc")
+    local folder = workspace:FindFirstChild("NPCs") or workspace:FindFirstChild("Npc") or workspace:FindFirstChild("Monsters")
     if not folder then return nil end
     local closest, distance = nil, math.huge
     for _, npc in ipairs(folder:GetChildren()) do
@@ -141,10 +143,10 @@ local function nearestNPC()
 end
 
 --------------------------------------------------
--- MAIN AUTOMATION LOOP
+-- MAIN AUTOMATION LOOP (ลูปการทำงานหลัก)
 --------------------------------------------------
 task.spawn(function()
-    while task.wait(0.3) do
+    while task.wait(0.2) do
         pcall(function()
             -- 1. God Mode
             if Settings.GodMode then
@@ -155,7 +157,7 @@ task.spawn(function()
                 end
             end
 
-            -- 2. No Hunger
+            -- 2. No Hunger (ล็อกค่าพลังงาน/ความหิวให้เต็ม)
             if Settings.NoHunger then
                 local leaderstats = player:FindFirstChild("leaderstats")
                 if leaderstats then
@@ -168,19 +170,31 @@ task.spawn(function()
                 end
             end
 
-            -- 3. Aura Attack
-            if Settings.Aura then
+            -- 3. Kill All Aura (โจมตีทุกอย่างในแมพนอกจากผู้เล่น)
+            if Settings.KillAllAura then
                 local myChar = character()
-                local hrp = root()
-                if myChar and hrp then
-                    for _, model in ipairs(workspace:GetChildren()) do
-                        if model ~= myChar and model:IsA("Model") then
-                            local hum = model:FindFirstChildOfClass("Humanoid")
-                            local targetRoot = model:FindFirstChild("HumanoidRootPart")
-                            if hum and targetRoot and hum.Health > 0 then
-                                if (hrp.Position - targetRoot.Position).Magnitude <= Settings.AuraRadius then
-                                    local remote = getRemote("AuraAttack", "AttackRemote", "Hit")
-                                    if remote then remote:FireServer(model, Settings.AuraDamage) end
+                for _, model in ipairs(workspace:GetDescendants()) do
+                    if model:IsA("Model") and model ~= myChar then
+                        local hum = model:FindFirstChildOfClass("Humanoid")
+                        local targetRoot = model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("Head")
+                        -- เช็คว่าเป็นตัวละครอื่นที่ไม่ใช่ผู้เล่น และยังมีชีวิตอยู่
+                        if hum and targetRoot and hum.Health > 0 then
+                            local isPlayer = false
+                            for _, p in ipairs(Players:GetPlayers()) do
+                                if p.Character == model then
+                                    isPlayer = true
+                                    break
+                                end
+                            end
+                            
+                            if not isPlayer then
+                                -- ส่งดาเมจหรือเรียกใช้รีโมตโจมตี
+                                local remote = getRemote("AuraAttack", "AttackRemote", "Hit", "Damage", "CombatRemote")
+                                if remote then
+                                    remote:FireServer(model, Settings.AuraDamage)
+                                else
+                                    -- วิธีสำรอง: ปรับเลือดมอนสเตอร์ให้เป็น 0 โดยตรง (ถ้าเกมรองรับ)
+                                    hum.Health = 0
                                 end
                             end
                         end
@@ -188,12 +202,12 @@ task.spawn(function()
                 end
             end
 
-            -- 4. Auto Collect
+            -- 4. Auto Collect (เก็บของอัตโนมัติ)
             if Settings.AutoCollect then
                 local res = nearestResource()
                 if res then
                     walkTo(res)
-                    local remote = getRemote("CollectResource", "Collect", "Gather")
+                    local remote = getRemote("CollectResource", "Collect", "Gather", "Pickup")
                     if remote then remote:FireServer(res) end
                 end
             end
@@ -208,7 +222,7 @@ task.spawn(function()
                 local npc = nearestNPC()
                 if npc then
                     walkTo(npc)
-                    local remote = getRemote("DeliverItem", "Deliver", "TurnIn")
+                    local remote = getRemote("DeliverItem", "Deliver", "TurnIn", "Sell")
                     if remote then remote:FireServer(npc) end
                 end
             end
@@ -218,7 +232,7 @@ task.spawn(function()
                 if quests then
                     for _, point in ipairs(quests:GetChildren()) do
                         if walkTo(point) then
-                            local remote = getRemote("QuestAction", "AcceptQuest", "QuestRemote")
+                            local remote = getRemote("QuestAction", "AcceptQuest", "QuestRemote", "CompleteQuest")
                             if remote then remote:FireServer(point) end
                             break
                         end
@@ -230,171 +244,150 @@ task.spawn(function()
 end)
 
 --------------------------------------------------
--- UI SETUP (SAFE GUI PARENT)
+-- UI SETUP (ดีไซน์ใหม่ ย่อเหลือกรอบเล็กๆ ได้)
 --------------------------------------------------
-local successUI, err = pcall(function()
-    if CoreGui:FindFirstChild("MrBeastModernUI") then
-        CoreGui:FindFirstChild("MrBeastModernUI"):Destroy()
-    end
-    if player.PlayerGui:FindFirstChild("MrBeastModernUI") then
-        player.PlayerGui:FindFirstChild("MrBeastModernUI"):Destroy()
-    end
+if playerGui:FindFirstChild("MrBeastModernUI") then
+    playerGui:FindFirstChild("MrBeastModernUI"):Destroy()
+end
 
-    local ScreenGui = Instance.new("ScreenGui")
-    ScreenGui.Name = "MrBeastModernUI"
-    ScreenGui.ResetOnSpawn = false
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "MrBeastModernUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = playerGui
 
-    -- ระบบเลือกที่วาง GUI ป้องกันโดนบล็อก
-    local vu = gethui or protectgui
-    if vu then
-        vu(ScreenGui)
-        ScreenGui.Parent = CoreGui
-    else
-        pcall(function()
-            ScreenGui.Parent = CoreGui
-        end)
-        if ScreenGui.Parent ~= CoreGui then
-            ScreenGui.Parent = player:WaitForChild("PlayerGui")
-        end
-    end
+local MainFrame = Instance.new("Frame")
+MainFrame.Size = UDim2.new(0, 280, 0, 370)
+MainFrame.Position = UDim2.new(0.5, -140, 0.5, -185)
+MainFrame.BackgroundColor3 = Color3.fromRGB(24, 24, 28)
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+MainFrame.Draggable = true
+MainFrame.Parent = ScreenGui
 
-    local MainFrame = Instance.new("Frame")
-    MainFrame.Size = UDim2.new(0, 280, 0, 370)
-    MainFrame.Position = UDim2.new(0.5, -140, 0.5, -185)
-    MainFrame.BackgroundColor3 = Color3.fromRGB(24, 24, 28)
-    MainFrame.BorderSizePixel = 0
-    MainFrame.Active = true
-    MainFrame.Draggable = true
-    MainFrame.Parent = ScreenGui
+local MainCorner = Instance.new("UICorner")
+MainCorner.CornerRadius = UDim.new(0, 10)
+MainCorner.Parent = MainFrame
 
-    local MainCorner = Instance.new("UICorner")
-    MainCorner.CornerRadius = UDim.new(0, 10)
-    MainCorner.Parent = MainFrame
+local TopBar = Instance.new("Frame")
+TopBar.Size = UDim2.new(1, 0, 0, 45)
+TopBar.BackgroundColor3 = Color3.fromRGB(32, 32, 38)
+TopBar.BorderSizePixel = 0
+TopBar.Parent = MainFrame
 
-    local TopBar = Instance.new("Frame")
-    TopBar.Size = UDim2.new(1, 0, 0, 45)
-    TopBar.BackgroundColor3 = Color3.fromRGB(32, 32, 38)
-    TopBar.BorderSizePixel = 0
-    TopBar.Parent = MainFrame
+local TopCorner = Instance.new("UICorner")
+TopCorner.CornerRadius = UDim.new(0, 10)
+TopCorner.Parent = TopBar
 
-    local TopCorner = Instance.new("UICorner")
-    TopCorner.CornerRadius = UDim.new(0, 10)
-    TopCorner.Parent = TopBar
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, -90, 1, 0)
+Title.Position = UDim2.new(0, 12, 0, 0)
+Title.BackgroundTransparency = 1
+Title.Text = "MrBeast Hub V2"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.TextSize = 16
+Title.Font = Enum.Font.GothamBold
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.Parent = TopBar
 
-    local Title = Instance.new("TextLabel")
-    Title.Size = UDim2.new(1, -90, 1, 0)
-    Title.Position = UDim2.new(0, 12, 0, 0)
-    Title.BackgroundTransparency = 1
-    Title.Text = "MrBeast Hub V2"
-    Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-    Title.TextSize = 16
-    Title.Font = Enum.Font.GothamBold
-    Title.TextXAlignment = Enum.TextXAlignment.Left
-    Title.Parent = TopBar
+local Container = Instance.new("ScrollingFrame")
+Container.Size = UDim2.new(1, 0, 1, -45)
+Container.Position = UDim2.new(0, 0, 0, 45)
+Container.BackgroundTransparency = 1
+Container.BorderSizePixel = 0
+Container.CanvasSize = UDim2.new(0, 0, 0, 310)
+Container.ScrollBarThickness = 4
+Container.Parent = MainFrame
 
-    local Container = Instance.new("ScrollingFrame")
-    Container.Size = UDim2.new(1, 0, 1, -45)
-    Container.Position = UDim2.new(0, 0, 0, 45)
-    Container.BackgroundTransparency = 1
-    Container.BorderSizePixel = 0
-    Container.CanvasSize = UDim2.new(0, 0, 0, 290)
-    Container.ScrollBarThickness = 4
-    Container.Parent = MainFrame
+local UIListLayout = Instance.new("UIListLayout")
+UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+UIListLayout.Padding = UDim.new(0, 8)
+UIListLayout.Parent = Container
 
-    local UIListLayout = Instance.new("UIListLayout")
-    UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-    UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    UIListLayout.Padding = UDim.new(0, 8)
-    UIListLayout.Parent = Container
+local CloseBtn = Instance.new("TextButton")
+CloseBtn.Size = UDim2.new(0, 30, 0, 30)
+CloseBtn.Position = UDim2.new(1, -38, 0, 7.5)
+CloseBtn.BackgroundColor3 = Color3.fromRGB(200, 60, 60)
+CloseBtn.Text = "X"
+CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+CloseBtn.TextSize = 14
+CloseBtn.Font = Enum.Font.GothamBold
+CloseBtn.Parent = TopBar
 
-    local CloseBtn = Instance.new("TextButton")
-    CloseBtn.Size = UDim2.new(0, 30, 0, 30)
-    CloseBtn.Position = UDim2.new(1, -38, 0, 7.5)
-    CloseBtn.BackgroundColor3 = Color3.fromRGB(200, 60, 60)
-    CloseBtn.Text = "X"
-    CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    CloseBtn.TextSize = 14
-    CloseBtn.Font = Enum.Font.GothamBold
-    CloseBtn.Parent = TopBar
+local CloseCorner = Instance.new("UICorner")
+CloseCorner.CornerRadius = UDim.new(0, 6)
+CloseCorner.Parent = CloseBtn
 
-    local CloseCorner = Instance.new("UICorner")
-    CloseCorner.CornerRadius = UDim.new(0, 6)
-    CloseCorner.Parent = CloseBtn
-
-    CloseBtn.MouseButton1Click:Connect(function()
-        ScreenGui:Destroy()
-    end)
-
-    local MinBtn = Instance.new("TextButton")
-    MinBtn.Size = UDim2.new(0, 30, 0, 30)
-    MinBtn.Position = UDim2.new(1, -74, 0, 7.5)
-    MinBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
-    MinBtn.Text = "-"
-    MinBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    MinBtn.TextSize = 16
-    MinBtn.Font = Enum.Font.GothamBold
-    MinBtn.Parent = TopBar
-
-    local MinCorner = Instance.new("UICorner")
-    MinCorner.CornerRadius = UDim.new(0, 6)
-    MinCorner.Parent = MinBtn
-
-    local minimized = false
-    MinBtn.MouseButton1Click:Connect(function()
-        minimized = not minimized
-        Container.Visible = not minimized
-        MainFrame.Size = minimized and UDim2.new(0, 280, 0, 45) or UDim2.new(0, 280, 0, 370)
-        MinBtn.Text = minimized and "+" or "-"
-    end)
-
-    local function createToggle(name, settingKey)
-        local ToggleBtn = Instance.new("TextButton")
-        ToggleBtn.Size = UDim2.new(0, 250, 0, 38)
-        ToggleBtn.BackgroundColor3 = Color3.fromRGB(36, 36, 44)
-        ToggleBtn.Text = "   " .. name
-        ToggleBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
-        ToggleBtn.TextSize = 14
-        ToggleBtn.Font = Enum.Font.GothamSemibold
-        ToggleBtn.TextXAlignment = Enum.TextXAlignment.Left
-        ToggleBtn.Parent = Container
-
-        local BtnCorner = Instance.new("UICorner")
-        BtnCorner.CornerRadius = UDim.new(0, 8)
-        BtnCorner.Parent = ToggleBtn
-
-        local StatusIndicator = Instance.new("Frame")
-        StatusIndicator.Size = UDim2.new(0, 12, 0, 12)
-        StatusIndicator.Position = UDim2.new(1, -25, 0.5, -6)
-        StatusIndicator.BackgroundColor3 = Color3.fromRGB(100, 40, 40)
-        StatusIndicator.Parent = ToggleBtn
-
-        local StatusCorner = Instance.new("UICorner")
-        StatusCorner.CornerRadius = UDim.new(1, 0)
-        StatusCorner.Parent = StatusIndicator
-
-        ToggleBtn.MouseButton1Click:Connect(function()
-            Settings[settingKey] = not Settings[settingKey]
-            if Settings[settingKey] then
-                StatusIndicator.BackgroundColor3 = Color3.fromRGB(60, 220, 90)
-                ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-                ToggleBtn.BackgroundColor3 = Color3.fromRGB(45, 55, 50)
-            else
-                StatusIndicator.BackgroundColor3 = Color3.fromRGB(100, 40, 40)
-                ToggleBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
-                ToggleBtn.BackgroundColor3 = Color3.fromRGB(36, 36, 44)
-            end
-        end)
-    end
-
-    createToggle("Auto Collect", "AutoCollect")
-    createToggle("Auto NPC", "AutoNPC")
-    createToggle("Auto Deliver", "AutoDeliver")
-    createToggle("Auto Quest", "AutoQuest")
-    createToggle("God Mode", "GodMode")
-    createToggle("No Hunger (ไม่หิว)", "NoHunger")
-    createToggle("Aura Attack", "Aura")
+CloseBtn.MouseButton1Click:Connect(function()
+    ScreenGui:Destroy()
 end)
 
-if not successUI then
-    warn("UI Load Error: " .. tostring(err))
+local MinBtn = Instance.new("TextButton")
+MinBtn.Size = UDim2.new(0, 30, 0, 30)
+MinBtn.Position = UDim2.new(1, -74, 0, 7.5)
+MinBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+MinBtn.Text = "-"
+MinBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+MinBtn.TextSize = 16
+MinBtn.Font = Enum.Font.GothamBold
+MinBtn.Parent = TopBar
+
+local MinCorner = Instance.new("UICorner")
+MinCorner.CornerRadius = UDim.new(0, 6)
+MinCorner.Parent = MinBtn
+
+-- ปรับปุ่มย่อหน้าจอให้เหลือแค่กรอบเล็กๆ (ซ่อนเนื้อหาข้างในทั้งหมด)
+local minimized = false
+MinBtn.MouseButton1Click:Connect(function()
+    minimized = not minimized
+    Container.Visible = not minimized
+    MainFrame.Size = minimized and UDim2.new(0, 280, 0, 45) or UDim2.new(0, 280, 0, 370)
+    MinBtn.Text = minimized and "+" or "-"
+end)
+
+local function createToggle(name, settingKey)
+    local ToggleBtn = Instance.new("TextButton")
+    ToggleBtn.Size = UDim2.new(0, 250, 0, 38)
+    ToggleBtn.BackgroundColor3 = Color3.fromRGB(36, 36, 44)
+    ToggleBtn.Text = "   " .. name
+    ToggleBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+    ToggleBtn.TextSize = 14
+    ToggleBtn.Font = Enum.Font.GothamSemibold
+    ToggleBtn.TextXAlignment = Enum.TextXAlignment.Left
+    ToggleBtn.Parent = Container
+
+    local BtnCorner = Instance.new("UICorner")
+    BtnCorner.CornerRadius = UDim.new(0, 8)
+    BtnCorner.Parent = ToggleBtn
+
+    local StatusIndicator = Instance.new("Frame")
+    StatusIndicator.Size = UDim2.new(0, 12, 0, 12)
+    StatusIndicator.Position = UDim2.new(1, -25, 0.5, -6)
+    StatusIndicator.BackgroundColor3 = Color3.fromRGB(100, 40, 40)
+    StatusIndicator.Parent = ToggleBtn
+
+    local StatusCorner = Instance.new("UICorner")
+    StatusCorner.CornerRadius = UDim.new(1, 0)
+    StatusCorner.Parent = StatusIndicator
+
+    ToggleBtn.MouseButton1Click:Connect(function()
+        Settings[settingKey] = not Settings[settingKey]
+        if Settings[settingKey] then
+            StatusIndicator.BackgroundColor3 = Color3.fromRGB(60, 220, 90)
+            ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            ToggleBtn.BackgroundColor3 = Color3.fromRGB(45, 55, 50)
+        else
+            StatusIndicator.BackgroundColor3 = Color3.fromRGB(100, 40, 40)
+            ToggleBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+            ToggleBtn.BackgroundColor3 = Color3.fromRGB(36, 36, 44)
+        end
+    end)
 end
+
+createToggle("Auto Collect", "AutoCollect")
+createToggle("Auto NPC", "AutoNPC")
+createToggle("Auto Deliver", "AutoDeliver")
+createToggle("Auto Quest", "AutoQuest")
+createToggle("God Mode", "GodMode")
+createToggle("No Hunger (ไม่หิว)", "NoHunger")
+createToggle("Kill All (ออร่าฆ่าหมดแมพ)", "KillAllAura")
