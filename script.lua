@@ -35,7 +35,7 @@ local function humanoid()
 end
 
 --------------------------------------------------
--- SAFE REMOTE FINDER (ค้นหารีโมตแบบยืดหยุ่น)
+-- SAFE REMOTE FINDER
 --------------------------------------------------
 local function getRemote(...)
     local names = {...}
@@ -155,10 +155,8 @@ task.spawn(function()
                 end
             end
 
-            -- 2. No Hunger (ระบบไม่หิว / พลังงานเต็ม)
+            -- 2. No Hunger
             if Settings.NoHunger then
-                local plrGui = player:FindFirstChild("PlayerGui")
-                -- ค้นหาและปรับค่าสถานะหิวผ่าน Stats ทั่วไปในเกม Roblox
                 local leaderstats = player:FindFirstChild("leaderstats")
                 if leaderstats then
                     for _, stat in ipairs(leaderstats:GetChildren()) do
@@ -232,154 +230,171 @@ task.spawn(function()
 end)
 
 --------------------------------------------------
--- MODERN UI DESIGN (สวยงาม พับเก็บได้ มีปุ่มปิด)
+-- UI SETUP (SAFE GUI PARENT)
 --------------------------------------------------
-if CoreGui:FindFirstChild("MrBeastModernUI") then
-    CoreGui:FindFirstChild("MrBeastModernUI"):Destroy()
-end
+local successUI, err = pcall(function()
+    if CoreGui:FindFirstChild("MrBeastModernUI") then
+        CoreGui:FindFirstChild("MrBeastModernUI"):Destroy()
+    end
+    if player.PlayerGui:FindFirstChild("MrBeastModernUI") then
+        player.PlayerGui:FindFirstChild("MrBeastModernUI"):Destroy()
+    end
 
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "MrBeastModernUI"
-ScreenGui.Parent = CoreGui
+    local ScreenGui = Instance.new("ScreenGui")
+    ScreenGui.Name = "MrBeastModernUI"
+    ScreenGui.ResetOnSpawn = false
 
-local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 280, 0, 370)
-MainFrame.Position = UDim2.new(0.5, -140, 0.5, -185)
-MainFrame.BackgroundColor3 = Color3.fromRGB(24, 24, 28)
-MainFrame.BorderSizePixel = 0
-MainFrame.Active = true
-MainFrame.Draggable = true
-MainFrame.Parent = ScreenGui
-
-local MainCorner = Instance.new("UICorner")
-MainCorner.CornerRadius = UDim.new(0, 10)
-MainCorner.Parent = MainFrame
-
--- Top Bar (แถบหัวข้อ)
-local TopBar = Instance.new("Frame")
-TopBar.Size = UDim2.new(1, 0, 0, 45)
-TopBar.BackgroundColor3 = Color3.fromRGB(32, 32, 38)
-TopBar.BorderSizePixel = 0
-TopBar.Parent = MainFrame
-
-local TopCorner = Instance.new("UICorner")
-TopCorner.CornerRadius = UDim.new(0, 10)
-TopCorner.Parent = TopBar
-
-local Title = Instance.new("TextLabel")
-Title.Size = UDim2.new(1, -90, 1, 0)
-Title.Position = UDim2.new(0, 12, 0, 0)
-Title.BackgroundTransparency = 1
-Title.Text = "MrBeast Hub V2"
-Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-Title.TextSize = 16
-Title.Font = Enum.Font.GothamBold
-Title.TextXAlignment = Enum.TextXAlignment.Left
-Title.Parent = TopBar
-
--- Container สำหรับเก็บปุ่มฟังก์ชัน (เพื่อให้กดพับซ่อนได้)
-local Container = Instance.new("ScrollingFrame")
-Container.Size = UDim2.new(1, 0, 1, -45)
-Container.Position = UDim2.new(0, 0, 0, 45)
-Container.BackgroundTransparency = 1
-Container.BorderSizePixel = 0
-Container.CanvasSize = UDim2.new(0, 0, 0, 290)
-Container.ScrollBarThickness = 4
-Container.Parent = MainFrame
-
-local UIListLayout = Instance.new("UIListLayout")
-UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-UIListLayout.Padding = UDim.new(0, 8)
-UIListLayout.Parent = Container
-
--- ปุ่ม Close (ปิดสคริปต์)
-local CloseBtn = Instance.new("TextButton")
-CloseBtn.Size = UDim2.new(0, 30, 0, 30)
-CloseBtn.Position = UDim2.new(1, -38, 0, 7.5)
-CloseBtn.BackgroundColor3 = Color3.fromRGB(200, 60, 60)
-CloseBtn.Text = "X"
-CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-CloseBtn.TextSize = 14
-CloseBtn.Font = Enum.Font.GothamBold
-CloseBtn.Parent = TopBar
-
-local CloseCorner = Instance.new("UICorner")
-CloseCorner.CornerRadius = UDim.new(0, 6)
-CloseCorner.Parent = CloseBtn
-
-CloseBtn.MouseButton1Click:Connect(function()
-    ScreenGui:Destroy()
-end)
-
--- ปุ่ม Minimize (พับหน้าต่าง)
-local MinBtn = Instance.new("TextButton")
-MinBtn.Size = UDim2.new(0, 30, 0, 30)
-MinBtn.Position = UDim2.new(1, -74, 0, 7.5)
-MinBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
-MinBtn.Text = "-"
-MinBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-MinBtn.TextSize = 16
-MinBtn.Font = Enum.Font.GothamBold
-MinBtn.Parent = TopBar
-
-local MinCorner = Instance.new("UICorner")
-MinCorner.CornerRadius = UDim.new(0, 6)
-MinCorner.Parent = MinBtn
-
-local minimized = false
-MinBtn.MouseButton1Click:Connect(function()
-    minimized = not minimized
-    Container.Visible = not minimized
-    MainFrame.Size = minimized and UDim2.new(0, 280, 0, 45) or UDim2.new(0, 280, 0, 370)
-    MinBtn.Text = minimized and "+" : "-"
-end)
-
--- ฟังก์ชันสร้างปุ่ม Toggle สไตล์โมเดิร์น
-local function createToggle(name, settingKey)
-    local ToggleBtn = Instance.new("TextButton")
-    ToggleBtn.Size = UDim2.new(0, 250, 0, 38)
-    ToggleBtn.BackgroundColor3 = Color3.fromRGB(36, 36, 44)
-    ToggleBtn.Text = "   " .. name
-    ToggleBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
-    ToggleBtn.TextSize = 14
-    ToggleBtn.Font = Enum.Font.GothamSemibold
-    ToggleBtn.TextXAlignment = Enum.TextXAlignment.Left
-    ToggleBtn.Parent = Container
-
-    local BtnCorner = Instance.new("UICorner")
-    BtnCorner.CornerRadius = UDim.new(0, 8)
-    BtnCorner.Parent = ToggleBtn
-
-    local StatusIndicator = Instance.new("Frame")
-    StatusIndicator.Size = UDim2.new(0, 12, 0, 12)
-    StatusIndicator.Position = UDim2.new(1, -25, 0.5, -6)
-    StatusIndicator.BackgroundColor3 = Color3.fromRGB(100, 40, 40)
-    StatusIndicator.Parent = ToggleBtn
-
-    local StatusCorner = Instance.new("UICorner")
-    StatusCorner.CornerRadius = UDim.new(1, 0)
-    StatusCorner.Parent = StatusIndicator
-
-    ToggleBtn.MouseButton1Click:Connect(function()
-        Settings[settingKey] = not Settings[settingKey]
-        if Settings[settingKey] then
-            StatusIndicator.BackgroundColor3 = Color3.fromRGB(60, 220, 90)
-            ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-            ToggleBtn.BackgroundColor3 = Color3.fromRGB(45, 55, 50)
-        else
-            StatusIndicator.BackgroundColor3 = Color3.fromRGB(100, 40, 40)
-            ToggleBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
-            ToggleBtn.BackgroundColor3 = Color3.fromRGB(36, 36, 44)
+    -- ระบบเลือกที่วาง GUI ป้องกันโดนบล็อก
+    local vu = gethui or protectgui
+    if vu then
+        vu(ScreenGui)
+        ScreenGui.Parent = CoreGui
+    else
+        pcall(function()
+            ScreenGui.Parent = CoreGui
+        end)
+        if ScreenGui.Parent ~= CoreGui then
+            ScreenGui.Parent = player:WaitForChild("PlayerGui")
         end
-    end)
-end
+    end
 
--- สร้างปุ่มเมนูทั้งหมด
-createToggle("Auto Collect", "AutoCollect")
-createToggle("Auto NPC", "AutoNPC")
-createToggle("Auto Deliver", "AutoDeliver")
-createToggle("Auto Quest", "AutoQuest")
-createToggle("God Mode", "GodMode")
-createToggle("No Hunger (ไม่หิว)", "NoHunger")
-createToggle("Aura Attack", "Aura")
+    local MainFrame = Instance.new("Frame")
+    MainFrame.Size = UDim2.new(0, 280, 0, 370)
+    MainFrame.Position = UDim2.new(0.5, -140, 0.5, -185)
+    MainFrame.BackgroundColor3 = Color3.fromRGB(24, 24, 28)
+    MainFrame.BorderSizePixel = 0
+    MainFrame.Active = true
+    MainFrame.Draggable = true
+    MainFrame.Parent = ScreenGui
+
+    local MainCorner = Instance.new("UICorner")
+    MainCorner.CornerRadius = UDim.new(0, 10)
+    MainCorner.Parent = MainFrame
+
+    local TopBar = Instance.new("Frame")
+    TopBar.Size = UDim2.new(1, 0, 0, 45)
+    TopBar.BackgroundColor3 = Color3.fromRGB(32, 32, 38)
+    TopBar.BorderSizePixel = 0
+    TopBar.Parent = MainFrame
+
+    local TopCorner = Instance.new("UICorner")
+    TopCorner.CornerRadius = UDim.new(0, 10)
+    TopCorner.Parent = TopBar
+
+    local Title = Instance.new("TextLabel")
+    Title.Size = UDim2.new(1, -90, 1, 0)
+    Title.Position = UDim2.new(0, 12, 0, 0)
+    Title.BackgroundTransparency = 1
+    Title.Text = "MrBeast Hub V2"
+    Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Title.TextSize = 16
+    Title.Font = Enum.Font.GothamBold
+    Title.TextXAlignment = Enum.TextXAlignment.Left
+    Title.Parent = TopBar
+
+    local Container = Instance.new("ScrollingFrame")
+    Container.Size = UDim2.new(1, 0, 1, -45)
+    Container.Position = UDim2.new(0, 0, 0, 45)
+    Container.BackgroundTransparency = 1
+    Container.BorderSizePixel = 0
+    Container.CanvasSize = UDim2.new(0, 0, 0, 290)
+    Container.ScrollBarThickness = 4
+    Container.Parent = MainFrame
+
+    local UIListLayout = Instance.new("UIListLayout")
+    UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    UIListLayout.Padding = UDim.new(0, 8)
+    UIListLayout.Parent = Container
+
+    local CloseBtn = Instance.new("TextButton")
+    CloseBtn.Size = UDim2.new(0, 30, 0, 30)
+    CloseBtn.Position = UDim2.new(1, -38, 0, 7.5)
+    CloseBtn.BackgroundColor3 = Color3.fromRGB(200, 60, 60)
+    CloseBtn.Text = "X"
+    CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    CloseBtn.TextSize = 14
+    CloseBtn.Font = Enum.Font.GothamBold
+    CloseBtn.Parent = TopBar
+
+    local CloseCorner = Instance.new("UICorner")
+    CloseCorner.CornerRadius = UDim.new(0, 6)
+    CloseCorner.Parent = CloseBtn
+
+    CloseBtn.MouseButton1Click:Connect(function()
+        ScreenGui:Destroy()
+    end)
+
+    local MinBtn = Instance.new("TextButton")
+    MinBtn.Size = UDim2.new(0, 30, 0, 30)
+    MinBtn.Position = UDim2.new(1, -74, 0, 7.5)
+    MinBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+    MinBtn.Text = "-"
+    MinBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    MinBtn.TextSize = 16
+    MinBtn.Font = Enum.Font.GothamBold
+    MinBtn.Parent = TopBar
+
+    local MinCorner = Instance.new("UICorner")
+    MinCorner.CornerRadius = UDim.new(0, 6)
+    MinCorner.Parent = MinBtn
+
+    local minimized = false
+    MinBtn.MouseButton1Click:Connect(function()
+        minimized = not minimized
+        Container.Visible = not minimized
+        MainFrame.Size = minimized and UDim2.new(0, 280, 0, 45) or UDim2.new(0, 280, 0, 370)
+        MinBtn.Text = minimized and "+" or "-"
+    end)
+
+    local function createToggle(name, settingKey)
+        local ToggleBtn = Instance.new("TextButton")
+        ToggleBtn.Size = UDim2.new(0, 250, 0, 38)
+        ToggleBtn.BackgroundColor3 = Color3.fromRGB(36, 36, 44)
+        ToggleBtn.Text = "   " .. name
+        ToggleBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+        ToggleBtn.TextSize = 14
+        ToggleBtn.Font = Enum.Font.GothamSemibold
+        ToggleBtn.TextXAlignment = Enum.TextXAlignment.Left
+        ToggleBtn.Parent = Container
+
+        local BtnCorner = Instance.new("UICorner")
+        BtnCorner.CornerRadius = UDim.new(0, 8)
+        BtnCorner.Parent = ToggleBtn
+
+        local StatusIndicator = Instance.new("Frame")
+        StatusIndicator.Size = UDim2.new(0, 12, 0, 12)
+        StatusIndicator.Position = UDim2.new(1, -25, 0.5, -6)
+        StatusIndicator.BackgroundColor3 = Color3.fromRGB(100, 40, 40)
+        StatusIndicator.Parent = ToggleBtn
+
+        local StatusCorner = Instance.new("UICorner")
+        StatusCorner.CornerRadius = UDim.new(1, 0)
+        StatusCorner.Parent = StatusIndicator
+
+        ToggleBtn.MouseButton1Click:Connect(function()
+            Settings[settingKey] = not Settings[settingKey]
+            if Settings[settingKey] then
+                StatusIndicator.BackgroundColor3 = Color3.fromRGB(60, 220, 90)
+                ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+                ToggleBtn.BackgroundColor3 = Color3.fromRGB(45, 55, 50)
+            else
+                StatusIndicator.BackgroundColor3 = Color3.fromRGB(100, 40, 40)
+                ToggleBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+                ToggleBtn.BackgroundColor3 = Color3.fromRGB(36, 36, 44)
+            end
+        end)
+    end
+
+    createToggle("Auto Collect", "AutoCollect")
+    createToggle("Auto NPC", "AutoNPC")
+    createToggle("Auto Deliver", "AutoDeliver")
+    createToggle("Auto Quest", "AutoQuest")
+    createToggle("God Mode", "GodMode")
+    createToggle("No Hunger (ไม่หิว)", "NoHunger")
+    createToggle("Aura Attack", "Aura")
+end)
+
+if not successUI then
+    warn("UI Load Error: " .. tostring(err))
+end
